@@ -16,8 +16,6 @@
 import sys
 from math import isinf
 
-from weasyprint.formatting_structure.boxes import InlineBox
-
 from .. import text
 from ..formatting_structure import boxes
 from .replaced import default_image_sizing
@@ -492,6 +490,7 @@ def table_and_columns_preferred_widths(context, box, outer=True):
     # Define constrainedness
     constrainedness = [False for i in range(grid_width)]
     has_max_width = [False for i in range(grid_width)]
+    has_min_width = [False for i in range(grid_width)]
 
     def _constrained(elt):
         return elt.style['width'] != 'auto' and elt.style['width'].unit != '%'
@@ -521,6 +520,23 @@ def table_and_columns_preferred_widths(context, box, outer=True):
         for cell in zipped_grid[i]:
             if cell and cell.colspan == 1 and _has_max_width(cell):
                 has_max_width[i] = True
+                break
+
+    def _has_min_width(elt):
+        if elt.style['min_width'] != 'auto':
+            return elt.style['min_width'].value > 0
+        return False
+
+    for i in range(grid_width):
+        if column_groups[i] and _has_min_width(column_groups[i]):
+            has_min_width[i] = True
+            continue
+        if columns[i] and _has_min_width(columns[i]):
+            has_min_width[i] = True
+            continue
+        for cell in zipped_grid[i]:
+            if cell and cell.colspan == 1 and _has_min_width(cell):
+                has_min_width[i] = True
                 break
 
     intrinsic_percentages = [
@@ -614,7 +630,7 @@ def table_and_columns_preferred_widths(context, box, outer=True):
     # (this is kind of a dumb way to do constraindness, and really instead of constraindness, setting up
     #  prefered content widths + wantingness to receive distributed width is the way to go here)
     constrainedness = [
-        c or not hmw for c, hmw in zip(constrainedness, has_max_width)
+        c or (has_min and not has_max) for c, has_max, has_min in zip(constrainedness, has_max_width, has_min_width)
     ]
 
     result = (
