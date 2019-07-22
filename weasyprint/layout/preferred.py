@@ -14,6 +14,9 @@
 """
 
 import sys
+from math import isinf
+
+from weasyprint.formatting_structure.boxes import InlineBox
 
 from .. import text
 from ..formatting_structure import boxes
@@ -488,20 +491,36 @@ def table_and_columns_preferred_widths(context, box, outer=True):
 
     # Define constrainedness
     constrainedness = [False for i in range(grid_width)]
+    has_max_width = [False for i in range(grid_width)]
+
+    def _constrained(elt):
+        return elt.style['width'] != 'auto' and elt.style['width'].unit != '%'
+
     for i in range(grid_width):
-        if (column_groups[i] and column_groups[i].style['width'] != 'auto' and
-                column_groups[i].style['width'].unit != '%'):
+        if column_groups[i] and _constrained(column_groups[i]):
             constrainedness[i] = True
             continue
-        if (columns[i] and columns[i].style['width'] != 'auto' and
-                columns[i].style['width'].unit != '%'):
+        if columns[i] and _constrained(columns[i]):
             constrainedness[i] = True
             continue
         for cell in zipped_grid[i]:
-            if (cell and cell.colspan == 1 and
-                    cell.style['width'] != 'auto' and
-                    cell.style['width'].unit != '%'):
+            if cell and cell.colspan == 1 and _constrained(cell):
                 constrainedness[i] = True
+                break
+
+    def _has_max_width(elt):
+        return not isinf(elt.style['max_width'].value)
+
+    for i in range(grid_width):
+        if column_groups[i] and _has_max_width(column_groups[i]):
+            has_max_width[i] = True
+            continue
+        if columns[i] and _has_max_width(columns[i]):
+            has_max_width[i] = True
+            continue
+        for cell in zipped_grid[i]:
+            if cell and cell.colspan == 1 and _has_max_width(cell):
+                has_max_width[i] = True
                 break
 
     intrinsic_percentages = [
@@ -589,6 +608,14 @@ def table_and_columns_preferred_widths(context, box, outer=True):
         table, margin_width(box, table_min_content_width))
     table_outer_max_content_width = margin_width(
         table, margin_width(box, table_max_content_width))
+
+    # after doing all the width distribution, constrain things with max width not set, as those have been
+    # sized to have the content already
+    # (this is kind of a dumb way to do constraindness, and really instead of constraindness, setting up
+    #  prefered content widths + wantingness to receive distributed width is the way to go here)
+    constrainedness = [
+        c or not hmw for c, hmw in zip(constrainedness, has_max_width)
+    ]
 
     result = (
         min_content_widths, max_content_widths, intrinsic_percentages,
